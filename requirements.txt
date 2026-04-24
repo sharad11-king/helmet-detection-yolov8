@@ -4,5 +4,6 @@ gunicorn==21.2.0
 torch==2.1.2
 torchvision==0.16.2
 numpy==1.24.3
+opencv-python-headless==4.8.1.78
+ultralytics==8.0.207
 python-multipart==0.0.9
-pydantic==2.5.3
