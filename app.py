@@ -5,12 +5,12 @@ from ultralytics import YOLO
 import numpy as np
 import base64
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import io
 
 app = FastAPI(title="Helmet Detection API")
 
-# Enable CORS
+# Enable CORS for dashboard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model
+# Load YOLO model
 model = None
 
 @app.on_event("startup")
@@ -50,23 +50,68 @@ async def get_dashboard():
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse("<h1>Dashboard not found. Please upload dashboard.html</h1>")
+    return HTMLResponse("""
+    <html>
+    <head>
+        <title>Helmet Detection</title>
+        <style>
+            body { font-family: Arial; text-align: center; padding: 50px; }
+            .upload-box { border: 2px dashed #ccc; padding: 40px; margin: 20px; }
+            button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+            img { max-width: 100%; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>🪖 Helmet Detection System</h1>
+        <div class="upload-box">
+            <input type="file" id="file" accept="image/*">
+            <br><br>
+            <button onclick="detect()">Detect Helmets</button>
+        </div>
+        <div id="result"></div>
+        <script>
+            async function detect() {
+                const file = document.getElementById('file').files[0];
+                if (!file) return alert('Please select an image');
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                document.getElementById('result').innerHTML = '<p>Processing...</p>';
+                
+                try {
+                    const response = await fetch('/detect', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        document.getElementById('result').innerHTML = `
+                            <h2>Found ${data.count} helmet(s)</h2>
+                            <img src="data:image/jpeg;base64,${data.image}">
+                        `;
+                    } else {
+                        document.getElementById('result').innerHTML = '<p>Error: ' + data.error + '</p>';
+                    }
+                } catch (error) {
+                    document.getElementById('result').innerHTML = '<p>Error: ' + error.message + '</p>';
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """)
 
 @app.post("/detect")
 async def detect_helmets(file: UploadFile = File(...)):
     if model is None:
         return JSONResponse(
-            status_code=503, 
-            content={"error": "Model not loaded. Please try again in a few seconds."}
+            status_code=503,
+            content={"success": False, "error": "Model not loaded. Please wait 30 seconds and try again."}
         )
     
     try:
         # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # Save original size
-        original_size = image.size
         
         # Run YOLO detection
         results = model(image, conf=0.5)
@@ -82,22 +127,18 @@ async def detect_helmets(file: UploadFile = File(...)):
                         "confidence": float(box.conf[0])
                     })
         
-        # Draw bounding boxes on image using PIL
+        # Draw bounding boxes
         draw = ImageDraw.Draw(image)
-        
         for r in results:
             boxes = r.boxes
             if boxes is not None:
                 for box in boxes:
-                    # Get box coordinates
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     confidence = float(box.conf[0])
+                    label = f"{model.names[int(box.cls[0])]}: {confidence:.2f}"
                     
                     # Draw rectangle
                     draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
-                    
-                    # Draw label
-                    label = f"{model.names[int(box.cls[0])]}: {confidence:.2f}"
                     draw.text((x1, y1 - 10), label, fill="red")
         
         # Convert to base64
@@ -113,10 +154,9 @@ async def detect_helmets(file: UploadFile = File(...)):
         }
         
     except Exception as e:
-        print(f"Error: {e}")
         return JSONResponse(
-            status_code=500, 
-            content={"error": str(e)}
+            status_code=500,
+            content={"success": False, "error": str(e)}
         )
 
 if __name__ == "__main__":
