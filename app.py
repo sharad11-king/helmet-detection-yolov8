@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import torch
 import numpy as np
@@ -12,7 +13,7 @@ app = FastAPI(title="PyTorch ML Model API", description="Model deployment on Ren
 model = None
 
 class PredictionInput(BaseModel):
-    features: List[List[Union[float, int]]]  # Supports batch predictions
+    features: List[List[Union[float, int]]]
 
 class PredictionOutput(BaseModel):
     predictions: List
@@ -21,13 +22,12 @@ class PredictionOutput(BaseModel):
 @app.on_event("startup")
 async def load_model():
     global model
-    model_path = "models/model.pt"  # Your PyTorch model file
+    model_path = "best.pt"  # Changed from models/model.pt to best.pt (your file is in root)
     
     if os.path.exists(model_path):
         try:
-            # Load PyTorch model
             model = torch.load(model_path, map_location=torch.device('cpu'))
-            model.eval()  # Set to evaluation mode
+            model.eval()
             print("PyTorch model loaded successfully")
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -43,23 +43,39 @@ async def root():
 async def health_check():
     return {"status": "healthy", "model_loaded": model is not None}
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def get_dashboard():
+    html_path = "dashboard.html"
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    else:
+        return HTMLResponse(content="<h1>Dashboard not found. Please add dashboard.html</h1>", status_code=404)
+
 @app.post("/predict", response_model=PredictionOutput)
 async def predict(input_data: PredictionInput):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     
     try:
-        # Convert input to tensor
         features = torch.tensor(input_data.features, dtype=torch.float32)
         
-        # Make prediction
         with torch.no_grad():
             predictions = model(features)
         
-        # Convert tensor to list for JSON response
         if isinstance(predictions, torch.Tensor):
             predictions = predictions.tolist()
         
         return {"predictions": predictions, "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/detect")
+async def detect_helmets(file: UploadFile = File(...)):
+    # This is where you'll add YOLO detection
+    # For now, returning placeholder
+    return JSONResponse({
+        "image": "",
+        "detections": [],
+        "count": 0
+    })
