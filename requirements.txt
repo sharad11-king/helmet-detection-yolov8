@@ -4,7 +4,3 @@ gunicorn
 pillow
 python-multipart
 ultralytics
-torch
-torchvision
-numpy
-opencv-python-headless
