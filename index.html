@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helmet Detection System | YOLOv8</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 40px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #fff 0%, #a8b5ff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .main-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            padding: 40px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .upload-area {
+            border: 2px dashed rgba(124, 110, 255, 0.5);
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            border-color: #7c6eff;
+            background: rgba(124, 110, 255, 0.1);
+        }
+
+        .upload-area i {
+            font-size: 60px;
+            color: #7c6eff;
+            margin-bottom: 20px;
+        }
+
+        .preview-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .detect-btn {
+            background: linear-gradient(135deg, #7c6eff 0%, #5a4fcf 100%);
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-top: 25px;
+            transition: all 0.3s;
+        }
+
+        .detect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(124, 110, 255, 0.4);
+        }
+
+        .detect-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(124,110,255,0.3);
+            border-top-color: #7c6eff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .results {
+            margin-top: 40px;
+        }
+
+        .stats {
+            background: linear-gradient(135deg, rgba(124,110,255,0.2), rgba(90,79,207,0.2));
+            border-radius: 20px;
+            padding: 25px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .stats-number {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #7c6eff;
+        }
+
+        .result-image {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .result-image img {
+            max-width: 100%;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .detection-item {
+            background: rgba(255,255,255,0.08);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .confidence-bar {
+            background: linear-gradient(90deg, #28a745, #7c6eff);
+            height: 6px;
+            border-radius: 3px;
+            margin-top: 5px;
+        }
+
+        .error {
+            background: rgba(255,71,87,0.2);
+            border: 1px solid #ff4757;
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .history-sidebar {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            padding: 25px;
+            margin-top: 30px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .history-item {
+            background: rgba(124,110,255,0.1);
+            border-radius: 12px;
+            padding: 12px;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .history-item:hover {
+            background: rgba(124,110,255,0.2);
+            transform: translateX(5px);
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid #7c6eff;
+            color: #7c6eff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: rgba(124,110,255,0.2);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8rem; }
+            .main-card { padding: 20px; }
+            .upload-area { padding: 30px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-hard-hat"></i> Helmet Detection System</h1>
+            <p style="color: rgba(255,255,255,0.7); margin-top: 10px;">Upload an image to detect helmets using YOLOv8</p>
+        </div>
+
+        <div class="main-card">
+            <div class="upload-area" onclick="document.getElementById('imageInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <h3>Click to Upload Image</h3>
+                <p style="color: rgba(255,255,255,0.6);">Supports JPG, PNG, JPEG</p>
+                <input type="file" id="imageInput" accept="image/*" style="display: none">
+                <div id="previewContainer"></div>
+            </div>
+
+            <div style="text-align: center;">
+                <button class="detect-btn" id="detectBtn" onclick="detectHelmets()" disabled>
+                    <i class="fas fa-search"></i> Detect Helmets
+                </button>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p style="margin-top: 15px;">AI is analyzing the image...</p>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+
+            <div id="results" class="results" style="display: none;">
+                <div class="stats">
+                    <i class="fas fa-chart-line" style="font-size: 2rem;"></i>
+                    <div class="stats-number" id="statsCount">0</div>
+                    <p>Helmet(s) Detected</p>
+                    <small id="processingTime" style="color: rgba(255,255,255,0.6);"></small>
+                </div>
+
+                <div class="result-image" id="resultImage"></div>
+
+                <div style="display: flex; gap: 10px; justify-content: center; margin: 20px 0;">
+                    <button onclick="downloadResult()"><i class="fas fa-download"></i> Download</button>
+                    <button onclick="clearImage()"><i class="fas fa-trash"></i> Clear</button>
+                </div>
+
+                <h3><i class="fas fa-list-ul"></i> Detection Details</h3>
+                <div id="detectionsList"></div>
+            </div>
+        </div>
+
+        <div class="history-sidebar">
+            <h3><i class="fas fa-history"></i> Recent Detections</h3>
+            <div id="historyList">
+                <p style="color: rgba(255,255,255,0.6); text-align: center;">No history yet</p>
+            </div>
+            <button onclick="clearHistory()" style="width: 100%; margin-top: 15px;">Clear History</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let currentResult = null;
+        let detectionHistory = JSON.parse(localStorage.getItem('helmetHistory') || '[]');
+
+        function updateHistory() {
+            const historyDiv = document.getElementById('historyList');
+            if (detectionHistory.length === 0) {
+                historyDiv.innerHTML = '<p style="color: rgba(255,255,255,0.6); text-align: center;">No history yet</p>';
+                return;
+            }
+            historyDiv.innerHTML = detectionHistory.slice().reverse().map((item, idx) => `
+                <div class="history-item" onclick="loadHistory(${detectionHistory.length - 1 - idx})">
+                    <small>${new Date(item.timestamp).toLocaleString()}</small>
+                    <div><strong>${item.count}</strong> helmet(s) detected</div>
+                </div>
+            `).join('');
+        }
+
+        function loadHistory(index) {
+            const item = detectionHistory[index];
+            document.getElementById('resultImage').innerHTML = `<img src="data:image/jpeg;base64,${item.image}">`;
+            document.getElementById('statsCount').innerHTML = item.count;
+            document.getElementById('processingTime').innerHTML = `Processed: ${item.timestamp}`;
+            
+            let html = '';
+            item.detections.forEach((det, i) => {
+                html += `
+                    <div class="detection-item">
+                        <div>
+                            <strong>#${i + 1}</strong> - ${det.class}
+                        </div>
+                        <div style="text-align: right;">
+                            ${(det.confidence * 100).toFixed(1)}%
+                            <div class="confidence-bar" style="width: ${det.confidence * 100}%;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('detectionsList').innerHTML = html;
+            document.getElementById('results').style.display = 'block';
+            currentResult = item;
+        }
+
+        function clearHistory() {
+            detectionHistory = [];
+            localStorage.removeItem('helmetHistory');
+            updateHistory();
+        }
+
+        function downloadResult() {
+            if (currentResult && currentResult.image) {
+                const link = document.createElement('a');
+                link.download = `detection-${Date.now()}.jpg`;
+                link.href = `data:image/jpeg;base64,${currentResult.image}`;
+                link.click();
+            }
+        }
+
+        function clearImage() {
+            selectedFile = null;
+            document.getElementById('previewContainer').innerHTML = '';
+            document.getElementById('imageInput').value = '';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('detectBtn').disabled = true;
+        }
+
+        document.getElementById('imageInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    document.getElementById('previewContainer').innerHTML = `
+                        <img src="${event.target.result}" class="preview-image">
+                    `;
+                    document.getElementById('detectBtn').disabled = false;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        async function detectHelmets() {
+            if (!selectedFile) return;
+
+            const startTime = Date.now();
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('detectBtn').disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            try {
+                const response = await fetch('/detect', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Detection failed. API may be waking up. Try again in 30 seconds.');
+
+                const data = await response.json();
+                const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+                document.getElementById('statsCount').innerHTML = data.count;
+                document.getElementById('processingTime').innerHTML = `Processed in ${processingTime} seconds`;
+                document.getElementById('resultImage').innerHTML = `<img src="data:image/jpeg;base64,${data.image}">`;
+
+                let html = '';
+                data.detections.forEach((det, i) => {
+                    html += `
+                        <div class="detection-item">
+                            <div>
+                                <strong>#${i + 1}</strong> - ${det.class}
+                            </div>
+                            <div style="text-align: right;">
+                                ${(det.confidence * 100).toFixed(1)}%
+                                <div class="confidence-bar" style="width: ${det.confidence * 100}%;"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                if (data.detections.length === 0) {
+                    html = '<p style="text-align: center;">No helmets detected in this image.</p>';
+                }
+
+                document.getElementById('detectionsList').innerHTML = html;
+                document.getElementById('results').style.display = 'block';
+
+                currentResult = data;
+                detectionHistory.push({
+                    timestamp: new Date().toLocaleString(),
+                    count: data.count,
+                    image: data.image,
+                    detections: data.detections
+                });
+                
+                localStorage.setItem('helmetHistory', JSON.stringify(detectionHistory));
+                updateHistory();
+
+            } catch (error) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = `
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Error:</strong> ${error.message}
+                `;
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('detectBtn').disabled = false;
+            }
+        }
+
+        updateHistory();
+    </script>
+</body>
+</html>
