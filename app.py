@@ -5,7 +5,7 @@ from ultralytics import YOLO
 import numpy as np
 import base64
 import os
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import io
 
 app = FastAPI(title="Helmet Detection API")
@@ -29,16 +29,16 @@ async def load_model():
     if os.path.exists(model_path):
         try:
             model = YOLO(model_path)
-            print("✅ Model loaded successfully!")
+            print("✅ YOLO model loaded successfully!")
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"❌ Error loading model: {e}")
             model = None
     else:
         print(f"❌ Model not found at {model_path}")
 
 @app.get("/")
 async def root():
-    return {"message": "Helmet Detection API", "status": "running"}
+    return {"message": "Helmet Detection API", "status": "running", "model_loaded": model is not None}
 
 @app.get("/health")
 async def health_check():
@@ -50,23 +50,26 @@ async def get_dashboard():
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
-    return HTMLResponse("<h1>Dashboard not found</h1>")
+    return HTMLResponse("<h1>Dashboard not found. Please upload dashboard.html</h1>")
 
 @app.post("/detect")
-async def detect(file: UploadFile = File(...)):
+async def detect_helmets(file: UploadFile = File(...)):
     if model is None:
-        return JSONResponse(status_code=503, content={"error": "Model not loaded"})
+        return JSONResponse(
+            status_code=503, 
+            content={"error": "Model not loaded. Please try again in a few seconds."}
+        )
     
     try:
         # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
         
-        # Convert PIL to numpy
-        img_array = np.array(image)
+        # Save original size
+        original_size = image.size
         
-        # Run detection
-        results = model(img_array, conf=0.5)
+        # Run YOLO detection
+        results = model(image, conf=0.5)
         
         # Get detections
         detections = []
@@ -79,13 +82,27 @@ async def detect(file: UploadFile = File(...)):
                         "confidence": float(box.conf[0])
                     })
         
-        # Get annotated image
-        annotated = results[0].plot()
+        # Draw bounding boxes on image using PIL
+        draw = ImageDraw.Draw(image)
+        
+        for r in results:
+            boxes = r.boxes
+            if boxes is not None:
+                for box in boxes:
+                    # Get box coordinates
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    confidence = float(box.conf[0])
+                    
+                    # Draw rectangle
+                    draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+                    
+                    # Draw label
+                    label = f"{model.names[int(box.cls[0])]}: {confidence:.2f}"
+                    draw.text((x1, y1 - 10), label, fill="red")
         
         # Convert to base64
-        annotated_pil = Image.fromarray(annotated)
         buffer = io.BytesIO()
-        annotated_pil.save(buffer, format="JPEG")
+        image.save(buffer, format="JPEG", quality=85)
         img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
         return {
@@ -96,4 +113,12 @@ async def detect(file: UploadFile = File(...)):
         }
         
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        print(f"Error: {e}")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": str(e)}
+        )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
