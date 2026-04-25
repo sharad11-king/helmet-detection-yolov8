@@ -1,11 +1,9 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import base64
-from PIL import Image, ImageDraw
+from PIL import Image
 import io
-import os
-import sys
 
 app = FastAPI()
 
@@ -15,18 +13,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Try to load YOLO
-model = None
-try:
-    from ultralytics import YOLO
-    if os.path.exists("best.pt"):
-        model = YOLO("best.pt")
-        print("✅ Model loaded")
-    else:
-        print("best.pt not found")
-except Exception as e:
-    print(f"Error loading model: {e}")
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -39,7 +25,6 @@ HTML_PAGE = """
             text-align: center;
             padding: 50px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
         }
         .card {
             background: white;
@@ -49,13 +34,6 @@ HTML_PAGE = """
             margin: auto;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-        h1 {
-            color: #333;
-        }
-        input {
-            margin: 20px 0;
-            padding: 10px;
-        }
         button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -64,6 +42,7 @@ HTML_PAGE = """
             border-radius: 25px;
             cursor: pointer;
             font-size: 16px;
+            margin: 10px;
         }
         img {
             max-width: 100%;
@@ -73,12 +52,8 @@ HTML_PAGE = """
         .result-box {
             margin-top: 20px;
             padding: 15px;
-            background: #f0f0f0;
+            background: #f8f9fa;
             border-radius: 10px;
-        }
-        .loading {
-            display: none;
-            margin: 20px;
         }
     </style>
 </head>
@@ -91,28 +66,19 @@ HTML_PAGE = """
         <br>
         <button onclick="detectHelmets()">Detect Helmets</button>
         
-        <div class="loading" id="loadingDiv">
-            <p>Processing...</p>
-        </div>
-        
         <div id="resultDiv"></div>
     </div>
 
     <script>
         async function detectHelmets() {
-            const fileInput = document.getElementById('fileInput');
-            const file = fileInput.files[0];
-            
+            const file = document.getElementById('fileInput').files[0];
             if (!file) {
                 alert('Please select an image');
                 return;
             }
             
-            const loadingDiv = document.getElementById('loadingDiv');
             const resultDiv = document.getElementById('resultDiv');
-            
-            loadingDiv.style.display = 'block';
-            resultDiv.innerHTML = '';
+            resultDiv.innerHTML = '<p>Processing...</p>';
             
             const formData = new FormData();
             formData.append('file', file);
@@ -124,29 +90,20 @@ HTML_PAGE = """
                 });
                 
                 const data = await response.json();
-                loadingDiv.style.display = 'none';
                 
-                if (data.success) {
+                if (data.image) {
                     resultDiv.innerHTML = `
                         <div class="result-box">
-                            <h3>✅ Found ${data.count} helmet(s)</h3>
+                            <h3>✅ Result</h3>
                             <img src="data:image/jpeg;base64,${data.image}">
+                            <p><strong>Found ${data.count} helmet(s)</strong></p>
                         </div>
                     `;
                 } else {
-                    resultDiv.innerHTML = `
-                        <div class="result-box">
-                            <p style="color: red;">Error: ${data.error}</p>
-                        </div>
-                    `;
+                    resultDiv.innerHTML = `<div class="result-box"><p>Error: ${data.error}</p></div>`;
                 }
             } catch (error) {
-                loadingDiv.style.display = 'none';
-                resultDiv.innerHTML = `
-                    <div class="result-box">
-                        <p style="color: red;">Error: ${error.message}</p>
-                    </div>
-                `;
+                resultDiv.innerHTML = `<div class="result-box"><p>Error: ${error.message}</p></div>`;
             }
         }
     </script>
@@ -156,11 +113,7 @@ HTML_PAGE = """
 
 @app.get("/")
 async def root():
-    return {"message": "API running", "model_loaded": model is not None}
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+    return {"message": "API is running"}
 
 @app.get("/dashboard")
 async def dashboard():
@@ -169,42 +122,28 @@ async def dashboard():
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
     try:
-        # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
         
-        # Process with YOLO if available
-        if model is not None:
-            results = model(image, conf=0.5)
-            
-            # Draw boxes
-            draw = ImageDraw.Draw(image)
-            for r in results:
-                if r.boxes:
-                    for box in r.boxes:
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+        # Resize if too large
+        if image.size[0] > 800:
+            ratio = 800 / image.size[0]
+            new_size = (800, int(image.size[1] * ratio))
+            image = image.resize(new_size, Image.Resampling.LANCZOS)
         
         # Convert to base64
         buffer = io.BytesIO()
-        image.save(buffer, format="JPEG")
-        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+        image.save(buffer, format="JPEG", quality=85)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
         
-        # Count detections
-        count = 0
-        if model is not None:
-            for r in results:
-                if r.boxes:
-                    count = len(r.boxes)
-        
-        return JSONResponse(content={
+        return {
             "success": True,
-            "count": count,
-            "image": img_base64
-        })
+            "count": 0,
+            "image": image_base64
+        }
         
     except Exception as e:
-        return JSONResponse(content={
+        return {
             "success": False,
             "error": str(e)
-        })
+        }
