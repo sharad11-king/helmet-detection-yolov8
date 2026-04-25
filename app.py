@@ -1,9 +1,11 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from ultralytics import YOLO
 import base64
-from PIL import Image
+from PIL import Image, ImageDraw
 import io
+import os
 
 app = FastAPI()
 
@@ -13,6 +15,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Load YOLO model
+model = None
+if os.path.exists("best.pt"):
+    try:
+        model = YOLO("best.pt")
+        print("✅ Helmet model loaded")
+    except:
+        pass
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -92,13 +103,17 @@ HTML_PAGE = """
                 const data = await response.json();
                 
                 if (data.image) {
-                    resultDiv.innerHTML = `
-                        <div class="result-box">
-                            <h3>✅ Result</h3>
-                            <img src="data:image/jpeg;base64,${data.image}">
-                            <p><strong>Found ${data.count} helmet(s)</strong></p>
-                        </div>
-                    `;
+                    let html = `<div class="result-box"><h3>✅ Found ${data.count} helmet(s)</h3>`;
+                    html += `<img src="data:image/jpeg;base64,${data.image}">`;
+                    if (data.detections && data.detections.length > 0) {
+                        html += `<p>`;
+                        data.detections.forEach(d => {
+                            html += `${d.class}: ${(d.confidence * 100).toFixed(1)}%<br>`;
+                        });
+                        html += `</p>`;
+                    }
+                    html += `</div>`;
+                    resultDiv.innerHTML = html;
                 } else {
                     resultDiv.innerHTML = `<div class="result-box"><p>Error: ${data.error}</p></div>`;
                 }
@@ -113,7 +128,7 @@ HTML_PAGE = """
 
 @app.get("/")
 async def root():
-    return {"message": "API is running"}
+    return {"message": "API running", "model_loaded": model is not None}
 
 @app.get("/dashboard")
 async def dashboard():
@@ -125,25 +140,37 @@ async def detect(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
         
-        # Resize if too large
+        detections = []
+        
+        if model:
+            results = model(image, conf=0.5)
+            
+            draw = ImageDraw.Draw(image)
+            for r in results:
+                if r.boxes:
+                    for box in r.boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+                        detections.append({
+                            "class": model.names[int(box.cls[0])],
+                            "confidence": float(box.conf[0])
+                        })
+        
         if image.size[0] > 800:
             ratio = 800 / image.size[0]
             new_size = (800, int(image.size[1] * ratio))
             image = image.resize(new_size, Image.Resampling.LANCZOS)
         
-        # Convert to base64
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=85)
         image_base64 = base64.b64encode(buffer.getvalue()).decode()
         
         return {
             "success": True,
-            "count": 0,
+            "count": len(detections),
+            "detections": detections,
             "image": image_base64
         }
         
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
